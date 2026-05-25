@@ -478,7 +478,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
                   setPasscode(e.target.value.replace(/[^0-9]/g, ''));
                   if (passcodeError) setPasscodeError('');
                 }}
-                placeholder="أدخل رمز المرور 2512"
+                placeholder="أدخل رمز المرور"
                 className="w-full text-center tracking-widest font-mono text-xl p-4 border border-slate-200 rounded-2xl outline-none focus:border-accent text-text-main bg-slate-50 focus:ring-4 focus:ring-accent/10 transition-all placeholder:tracking-normal placeholder:text-xs"
               />
             </div>

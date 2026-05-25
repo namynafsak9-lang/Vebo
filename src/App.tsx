@@ -61,7 +61,7 @@ export default function App() {
       setIsSidebarOpen(false);
       setView('admin');
     } else {
-      setPasscodeModalError('رمز المرور الذي أدخلته غير صحيح. يرجى إدخال (2512)');
+      setPasscodeModalError('رمز المرور الذي أدخلته غير صحيح. يرجى المحاولة مرة أخرى.');
     }
   };
 
@@ -446,9 +446,9 @@ export default function App() {
                         <LayoutDashboard className="w-4 h-4 text-accent" />
                         <span>لوحة التحكم (الإدارة)</span>
                       </div>
-                      <div className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-150">
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200">
                         <Lock className="w-2.5 h-2.5" />
-                        <span>كود: 2512</span>
+                        <span>محمية</span>
                       </div>
                     </button>
                   </div>
@@ -528,7 +528,7 @@ export default function App() {
                 </div>
                 <h3 className="text-lg font-black text-text-main leading-tight mt-2">رمز عبور المسؤول الإداري</h3>
                 <p className="text-[11px] text-text-muted leading-relaxed max-w-[280px]">
-                  الرجاء إدخال المرور المثبت (<span className="font-mono font-bold text-amber-600">2512</span>) للمتابعة إلى الإشراف.
+                  الرجاء إدخال رمز المرور الإداري المخصص للمتابعة إلى الإشراف.
                 </p>
               </div>
 
@@ -544,7 +544,7 @@ export default function App() {
                       setEnteredPasscode(e.target.value.replace(/[^0-9]/g, ''));
                       if (passcodeModalError) setPasscodeModalError('');
                     }}
-                    placeholder="أدخل الرمز 2512"
+                    placeholder="أدخل رمز المرور"
                     className="w-full text-center tracking-widest font-mono text-xl p-4 border border-slate-200 rounded-2xl outline-none focus:border-accent text-text-main bg-slate-50 focus:ring-4 focus:ring-accent/10 transition-all placeholder:tracking-normal placeholder:text-xs"
                   />
                 </div>
