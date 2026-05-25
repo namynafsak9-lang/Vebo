@@ -9,9 +9,10 @@ import AdminDashboard from './components/AdminDashboard';
 import VeboLogo from './components/VeboLogo';
 import { 
   ShoppingBag, Search, Filter, Shield, Sparkles, SlidersHorizontal, 
-  HelpCircle, AlignCenter, Loader2, ArrowRight, Layers 
+  HelpCircle, AlignCenter, Loader2, ArrowRight, Layers,
+  Menu, X, Lock, Settings, KeyRound, LayoutDashboard, Home, Database
 } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const CATEGORIES = ["جميع الفئات", "إلكترونيات", "أدوات مكتبية", "ملابس وموضة", "المنزل وأسلوب الحياة", "مستحضرات عناية وتجميل"];
 
@@ -33,6 +34,36 @@ export default function App() {
   
   // Modal details
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // New states for the sliding sidebar and password-gated access
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
+  const [enteredPasscode, setEnteredPasscode] = useState('');
+  const [passcodeModalError, setPasscodeModalError] = useState('');
+
+  const handleOpenAdmin = () => {
+    const isUnlocked = localStorage.getItem('vebo_admin_unlocked') === 'true';
+    if (isUnlocked) {
+      setView('admin');
+      setIsSidebarOpen(false);
+    } else {
+      setIsPasscodeModalOpen(true);
+      setEnteredPasscode('');
+      setPasscodeModalError('');
+    }
+  };
+
+  const handlePasscodeModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (enteredPasscode === '2512') {
+      localStorage.setItem('vebo_admin_unlocked', 'true');
+      setIsPasscodeModalOpen(false);
+      setIsSidebarOpen(false);
+      setView('admin');
+    } else {
+      setPasscodeModalError('رمز المرور الذي أدخلته غير صحيح. يرجى إدخال (2512)');
+    }
+  };
 
   // Hydrate categories dynamically
   useEffect(() => {
@@ -109,9 +140,20 @@ export default function App() {
           
           {/* Headline branding using the uploaded Custom Vebo Logo */}
           <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-            <div className="flex flex-col items-start gap-1 cursor-pointer select-none" onClick={() => { setSearchQuery(''); setSelectedCategory('جميع الفئات'); }}>
-              <VeboLogo showText={true} textSize="md" iconSize={40} />
-              <p className="text-[10px] text-text-muted mt-0.5 leading-none font-medium mr-1.5">تسوّق منتجات مميزة مع عروض ترويجية مستهدفة</p>
+            <div className="flex items-center gap-3.5">
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="flex items-center gap-2 p-2 px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-xl transition-all cursor-pointer font-extrabold text-[11px] text-text-main shadow-xs"
+                title="القائمة الخيارية الجانبية"
+              >
+                <Menu className="w-4 h-4 text-slate-600" />
+                <span>القائمة</span>
+              </button>
+              
+              <div className="flex flex-col items-start gap-1 cursor-pointer select-none" onClick={() => { setSearchQuery(''); setSelectedCategory('جميع الفئات'); }}>
+                <VeboLogo showText={true} textSize="md" iconSize={40} />
+                <p className="text-[10px] text-text-muted mt-0.5 leading-none font-medium mr-1.5">تسوّق منتجات مميزة مع عروض ترويجية مستهدفة</p>
+              </div>
             </div>
           </div>
 
@@ -317,8 +359,15 @@ export default function App() {
           <div>
             حقوق الطبع والنشر &copy; 2026 منصة ڤيبو (Vebo). جميع الحقوق محفوظة.
           </div>
-          <div className="text-[10px] text-text-muted font-mono">
-            نظام حماية الإشهار الآمن &middot; متصل مع FIRESTORE
+          <div className="text-[10px] text-text-muted font-mono flex items-center gap-2">
+            <span>نظام حماية الإشهار الآمن &middot; متصل مع FIRESTORE</span>
+            <span>&middot;</span>
+            <button 
+              onClick={() => setView('admin')} 
+              className="text-accent hover:underline font-bold cursor-pointer"
+            >
+              بوابة الإدارة
+            </button>
           </div>
         </div>
       </footer>
@@ -330,6 +379,200 @@ export default function App() {
             product={selectedProduct} 
             onClose={() => setSelectedProduct(null)} 
           />
+        )}
+      </AnimatePresence>
+
+      {/* 6. Sliding Sidebar Drawer */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Backdrop Overlay */}
+            <motion.div 
+              key="sidebar-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 cursor-pointer"
+            />
+            {/* Sidebar Container */}
+            <motion.div 
+              key="sidebar-panel"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-55 flex flex-col text-right border-l border-slate-100"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex flex-col items-start gap-0.5">
+                  <VeboLogo showText={true} textSize="sm" iconSize={32} />
+                  <span className="text-[10px] text-text-muted mt-0.5 mr-1.5">خيارات المنصة وتنقّل سريع</span>
+                </div>
+                <button 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500 transition-colors cursor-pointer"
+                  title="إغلاق القائمة"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Navigation list */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                
+                {/* Options Section */}
+                <div className="space-y-2.5">
+                  <span className="text-[10px] font-black tracking-wider text-text-muted uppercase">خيارات التنقل الأساسية</span>
+                  <div className="space-y-1.5">
+                    <button 
+                      onClick={() => {
+                        setSelectedCategory('جميع الفئات');
+                        setSearchQuery('');
+                        setIsSidebarOpen(false);
+                      }}
+                      className="w-full text-right p-3 rounded-xl flex items-center gap-3 hover:bg-slate-50 transition-all font-bold text-xs text-text-main cursor-pointer"
+                    >
+                      <Home className="w-4 h-4 text-slate-400" />
+                      <span>الصفحة الرئيسية للمتجر</span>
+                    </button>
+
+                    <button 
+                      onClick={handleOpenAdmin}
+                      className="w-full text-right p-3 rounded-xl flex items-center justify-between hover:bg-accent/5 hover:text-accent transition-all font-bold text-xs text-text-main border border-dashed border-slate-200 hover:border-accent/30 cursor-pointer bg-slate-50/50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <LayoutDashboard className="w-4 h-4 text-accent" />
+                        <span>لوحة التحكم (الإدارة)</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-150">
+                        <Lock className="w-2.5 h-2.5" />
+                        <span>كود: 2512</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Categories quick links Section */}
+                <div className="space-y-2.5 pt-4 border-t border-slate-150">
+                  <span className="text-[10px] font-black tracking-wider text-text-muted uppercase flex items-center gap-1">
+                    <Filter className="w-3.5 h-3.5 text-slate-400" />
+                    تصفح حسب التصنيف المباشر
+                  </span>
+                  <div className="space-y-1">
+                    {(categories.length > 0 
+                      ? ['جميع الفئات', ...categories.map(c => c.name)]
+                      : ["جميع الفئات", "إلكترونيات", "أدوات مكتبية", "ملابس وموضة", "المنزل وأسلوب الحياة", "مستحضرات عناية وتجميل"]
+                    ).map(catStr => {
+                      const isActive = selectedCategory === catStr;
+                      return (
+                        <button
+                          key={`drawer-${catStr}`}
+                          onClick={() => {
+                            setSelectedCategory(catStr);
+                            setIsSidebarOpen(false);
+                          }}
+                          className={`w-full text-right py-2 px-3 rounded-lg text-xs font-bold transition-all flex justify-between items-center cursor-pointer ${
+                            isActive ? "bg-accent/10 text-accent font-black mr-2" : "text-text-muted hover:bg-slate-50 hover:text-text-main"
+                          }`}
+                        >
+                          <span>{catStr}</span>
+                          {isActive && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t border-slate-100 bg-slate-50/50 text-center">
+                <div className="text-[10px] text-text-muted">منصة ڤيبو الإعلانية المتكاملة Pro</div>
+                <div className="text-[9px] text-slate-400 mt-1">جميع الحقوق محفوظة &copy; 2026</div>
+              </div>
+
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 7. Passcode Entry Modal */}
+      <AnimatePresence>
+        {isPasscodeModalOpen && (
+          <>
+            {/* Backdrop Overlay */}
+            <motion.div 
+              key="passcode-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsPasscodeModalOpen(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-60 cursor-pointer"
+            />
+            {/* Modal Body */}
+            <motion.div 
+              key="passcode-modal"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="fixed inset-x-4 top-[15%] md:top-[20%] mx-auto max-w-sm bg-white border border-slate-200 rounded-[2.5rem] p-8 md:p-10 shadow-2xl z-65 flex flex-col text-right space-y-6 overflow-hidden"
+            >
+              <div className="absolute -top-12 -left-12 w-32 h-32 bg-accent/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-50/40 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="flex flex-col items-center gap-2 text-center pointer-events-none">
+                <div className="p-3 bg-accent/10 rounded-2xl">
+                  <KeyRound className="w-8 h-8 text-accent" />
+                </div>
+                <h3 className="text-lg font-black text-text-main leading-tight mt-2">رمز عبور المسؤول الإداري</h3>
+                <p className="text-[11px] text-text-muted leading-relaxed max-w-[280px]">
+                  الرجاء إدخال المرور المثبت (<span className="font-mono font-bold text-amber-600">2512</span>) للمتابعة إلى الإشراف.
+                </p>
+              </div>
+
+              <form onSubmit={handlePasscodeModalSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-text-muted uppercase tracking-wider mr-1 text-right block">رمز المرور للمسؤول (Password)</label>
+                  <input 
+                    type="password"
+                    required
+                    maxLength={4}
+                    value={enteredPasscode}
+                    onChange={(e) => {
+                      setEnteredPasscode(e.target.value.replace(/[^0-9]/g, ''));
+                      if (passcodeModalError) setPasscodeModalError('');
+                    }}
+                    placeholder="أدخل الرمز 2512"
+                    className="w-full text-center tracking-widest font-mono text-xl p-4 border border-slate-200 rounded-2xl outline-none focus:border-accent text-text-main bg-slate-50 focus:ring-4 focus:ring-accent/10 transition-all placeholder:tracking-normal placeholder:text-xs"
+                  />
+                </div>
+
+                {passcodeModalError && (
+                  <div className="p-3 bg-red-50 text-red-600 border border-red-100 rounded-xl text-[11px] font-semibold leading-relaxed text-right">
+                    {passcodeModalError}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsPasscodeModalOpen(false)}
+                    className="flex-1 py-3 text-xs font-bold text-text-muted hover:text-text-main bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all cursor-pointer text-center"
+                  >
+                    إلغاء
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 py-3 text-xs font-black text-white bg-accent hover:bg-blue-700 rounded-2xl transition-all cursor-pointer text-center shadow-xs"
+                  >
+                    تأكيد والعبور
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 

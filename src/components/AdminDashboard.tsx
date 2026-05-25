@@ -104,7 +104,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
 
   // Sync products, categories, ads
   useEffect(() => {
-    if (!currentUser || currentUser.email !== 'ma6922249@gmail.com') return;
+    if (!isPasscodeUnlocked && (!currentUser || currentUser.email !== 'ma6922249@gmail.com')) return;
 
     const unsubProds = onSnapshot(
       collection(db, 'products'),
@@ -135,7 +135,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
       unsubCats();
       unsubAds();
     };
-  }, [currentUser]);
+  }, [currentUser, isPasscodeUnlocked]);
 
   // Handle dynamic preset selection as categories load
   useEffect(() => {
