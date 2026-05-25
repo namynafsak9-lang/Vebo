@@ -40,11 +40,39 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["slot", "imageUrl", "targetUrl", "title"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global settings for the store and order flows.",
+      "type": "object",
+      "properties": {
+        "googleFormUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["googleFormUrl"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An e-commerce purchase order details.",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "items": { "type": "array" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "canceled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerName", "customerPhone", "items", "totalPrice", "status"]
     }
   },
   "firestore": {
     "/categories/{categoryId}": { "schema": "Category", "description": "Dynamic product categories" },
     "/products/{productId}": { "schema": "Product", "description": "Products list" },
-    "/ads/{adId}": { "schema": "Ad", "description": "Advertisement slots config" }
+    "/ads/{adId}": { "schema": "Ad", "description": "Advertisement slots config" },
+    "/settings/{settingId}": { "schema": "Settings", "description": "Global general configuration keys" },
+    "/orders/{orderId}": { "schema": "Order", "description": "Purchase orders data bank" }
   }
 }

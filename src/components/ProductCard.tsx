@@ -1,14 +1,15 @@
 import { Product } from '../types';
 import { formatCurrency } from '../lib/utils';
-import { Eye, ArrowUpRight } from 'lucide-react';
+import { Eye, ArrowUpRight, ShoppingCart } from 'lucide-react';
 
 interface ProductCardProps {
   key?: string;
   product: Product;
   onViewDetails: (product: Product) => void;
+  onAddToCart: (product: Product) => void;
 }
 
-export default function ProductCard({ product, onViewDetails }: ProductCardProps) {
+export default function ProductCard({ product, onViewDetails, onAddToCart }: ProductCardProps) {
   return (
     <div 
       className="group bg-card rounded-2xl border border-border overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-slate-100 flex flex-col justify-between h-full relative text-right"
@@ -57,13 +58,22 @@ export default function ProductCard({ product, onViewDetails }: ProductCardProps
           </p>
         </div>
 
-        <button
-          onClick={() => onViewDetails(product)}
-          className="w-full mt-2 py-2.5 px-4 bg-slate-55 border border-slate-150 hover:bg-slate-50 text-text-main rounded-xl font-bold transition-all duration-200 text-xs flex items-center justify-center gap-2 group-hover:border-accent group-hover:text-accent cursor-pointer"
-        >
-          التفاصيل الكاملة
-          <ArrowUpRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-        </button>
+        <div className="flex gap-2.5 mt-2">
+          <button
+            onClick={() => onViewDetails(product)}
+            className="flex-1 py-2.5 px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-text-main rounded-xl font-bold transition-all duration-200 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            التفاصيل
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => onAddToCart(product)}
+            className="flex-1 py-2.5 px-3 bg-accent hover:bg-blue-700 text-white rounded-xl font-bold transition-all duration-200 text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            أضف للسلة
+          </button>
+        </div>
       </div>
     </div>
   );

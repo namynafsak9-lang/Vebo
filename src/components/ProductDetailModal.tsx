@@ -3,13 +3,15 @@ import { Product } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { motion } from 'motion/react';
 import { X, Calendar, Tag, ShieldCheck, ShoppingCart } from 'lucide-react';
+import { showToast } from '../lib/toast';
 
 interface ProductDetailModalProps {
   product: Product;
   onClose: () => void;
+  onAddToCart: (product: Product) => void;
 }
 
-export default function ProductDetailModal({ product, onClose }: ProductDetailModalProps) {
+export default function ProductDetailModal({ product, onClose, onAddToCart }: ProductDetailModalProps) {
   // Simple check to close on dark backdrop click
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
@@ -103,13 +105,13 @@ export default function ProductDetailModal({ product, onClose }: ProductDetailMo
             {/* Primary Action Button */}
             <button
               onClick={() => {
-                alert(`تمت إضافة ${product.title} إلى قائمة الأمنيات المؤقتة!`);
+                onAddToCart(product);
                 onClose();
               }}
               className="w-full py-3 px-5 bg-accent hover:bg-blue-700 text-white rounded-xl font-bold transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer text-sm"
             >
               <ShoppingCart className="w-4 h-4" />
-              أضف إلى قائمة الأمنيات
+              أضف إلى السلة الحالية
             </button>
           </div>
         </div>

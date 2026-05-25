@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db, onSnapshot, collection, signInWithPopup, googleProvider } from './firebase';
-import { Product, Category } from './types';
+import { auth, db, onSnapshot, collection, doc, signInWithPopup, googleProvider } from './firebase';
+import { Product, Category, CartItem } from './types';
 import { handleFirestoreError, OperationType } from './lib/errorHandler';
 import AdSlotComponent from './components/AdSlotComponent';
 import ProductCard from './components/ProductCard';
 import ProductDetailModal from './components/ProductDetailModal';
 import AdminDashboard from './components/AdminDashboard';
 import VeboLogo from './components/VeboLogo';
+import ToastContainer from './components/ToastContainer';
+import CartDrawer from './components/CartDrawer';
+import { showToast } from './lib/toast';
 import { 
   ShoppingBag, Search, Filter, Shield, Sparkles, SlidersHorizontal, 
   HelpCircle, AlignCenter, Loader2, ArrowRight, Layers,
-  Menu, X, Lock, Settings, KeyRound, LayoutDashboard, Home, Database
+  Menu, X, Lock, Settings, KeyRound, LayoutDashboard, Home, Database, ShoppingCart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,9 +27,69 @@ export default function App() {
   
   // View navigation: 'home' | 'admin'
   const [view, setView] = useState<'home' | 'admin'>(() => {
+    const isUnlocked = localStorage.getItem('vebo_admin_unlocked') === 'true';
+    const savedView = localStorage.getItem('vebo_active_view');
+    if (isUnlocked && savedView === 'admin') {
+      return 'admin';
+    }
     const params = new URLSearchParams(window.location.search);
     return (params.has('admin') || params.has('vebo-admin') || window.location.pathname.includes('/admin')) ? 'admin' : 'home';
   });
+
+  // Keep view synchronized in localStorage
+  useEffect(() => {
+    localStorage.setItem('vebo_active_view', view);
+  }, [view]);
+
+  // Cart management states
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const savedCart = localStorage.getItem('vebo_cart');
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('vebo_cart', JSON.stringify(cart));
+  }, [cart]);
+
+  const handleAddToCart = (product: Product) => {
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((item) => item.product.id === product.id);
+      if (existingItem) {
+        showToast(`تم زيادة كمية ${product.title} في السلة!`, "success");
+        return prevCart.map((item) =>
+          item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      } else {
+        showToast(`تمت إضافة ${product.title} إلى السلة بنجاح!`, "success");
+        return [...prevCart, { product, quantity: 1 }];
+      }
+    });
+  };
+
+  const handleRemoveFromCart = (productId: string) => {
+    setCart((prevCart) => {
+      const filtered = prevCart.filter((item) => item.product.id !== productId);
+      showToast("تم حذف المنتج من السلة.", "info");
+      return filtered;
+    });
+  };
+
+  const handleUpdateCartQuantity = (productId: string, quantity: number) => {
+    if (quantity < 1) {
+      handleRemoveFromCart(productId);
+      return;
+    }
+    setCart((prevCart) =>
+      prevCart.map((item) =>
+        item.product.id === productId ? { ...item, quantity } : item
+      )
+    );
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+  };
   
   // Search & Filters parameters
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +171,7 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       console.error(err);
-      alert("فشل أو تم حظر نافذة تسجيل الدخول المنبثقة. يرجى إعادة المحاولة.");
+      showToast("فشل أو تم حظر نافذة تسجيل الدخول المنبثقة. يرجى إعادة المحاولة.", "error");
     }
   };
 
@@ -164,6 +227,21 @@ export default function App() {
 
           {/* Authenticated user control block */}
           <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            {/* Cart Icon Toggle inside the Header */}
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative p-2.5 px-4 bg-accent text-white hover:bg-blue-750 rounded-2xl transition-all font-black text-xs flex items-center gap-2 cursor-pointer shadow-md select-none"
+              title="سلة المشتريات والطلبات"
+            >
+              <ShoppingCart className="w-4 h-4 text-white" />
+              <span>سلة الطلبات ({cart.reduce((tot, item) => tot + item.quantity, 0)})</span>
+              {cart.length > 0 && (
+                <span className="absolute -top-1.5 -left-1.5 bg-rose-500 text-white font-extrabold text-[9px] w-5.5 h-5.5 rounded-full flex items-center justify-center border-2 border-white animate-pulse">
+                  {cart.length}
+                </span>
+              )}
+            </button>
+
             {currentUser && (
               <div className="flex items-center gap-3.5 border-r border-slate-250 pr-3.5 bg-slate-55 p-1.5 pl-3 rounded-full flex-row-reverse">
                 <img 
@@ -173,7 +251,9 @@ export default function App() {
                 />
                 <div className="hidden lg:block text-right text-[11px] font-bold">
                   <div className="text-text-main truncate max-w-[100px] leading-tight">{currentUser.displayName}</div>
-                  <div className="text-text-muted mt-0.5 leading-none text-[9px] font-mono">مسؤول المتجر المعتمد</div>
+                  <div className="text-text-muted mt-0.5 leading-none text-[9px] font-mono">
+                    {currentUser.email === 'ma6922249@gmail.com' ? 'مسؤول المتجر المعتمد' : 'مستخدم منصة ڤيبو'}
+                  </div>
                 </div>
                 <button 
                   onClick={handleLogout}
@@ -329,6 +409,7 @@ export default function App() {
                       key={prod.id} 
                       product={prod} 
                       onViewDetails={(p) => setSelectedProduct(p)} 
+                      onAddToCart={handleAddToCart}
                     />
                   ];
 
@@ -378,6 +459,7 @@ export default function App() {
           <ProductDetailModal 
             product={selectedProduct} 
             onClose={() => setSelectedProduct(null)} 
+            onAddToCart={handleAddToCart}
           />
         )}
       </AnimatePresence>
@@ -436,6 +518,22 @@ export default function App() {
                     >
                       <Home className="w-4 h-4 text-slate-400" />
                       <span>الصفحة الرئيسية للمتجر</span>
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        setIsSidebarOpen(false);
+                        setIsCartOpen(true);
+                      }}
+                      className="w-full text-right p-3 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-all font-bold text-xs text-text-main cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ShoppingCart className="w-4 h-4 text-slate-400" />
+                        <span>سلة الشراء الحالية</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[9px] font-black text-accent bg-accent/10 px-2 py-0.5 rounded-full">
+                        <span>{cart.length} منتج</span>
+                      </div>
                     </button>
 
                     <button 
@@ -575,6 +673,19 @@ export default function App() {
           </>
         )}
       </AnimatePresence>
+
+      {/* 8. Functional Shopping Cart Drawer */}
+      <CartDrawer 
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cartItems={cart}
+        onUpdateQuantity={handleUpdateCartQuantity}
+        onRemoveItem={handleRemoveFromCart}
+        onClearCart={handleClearCart}
+      />
+
+      {/* Modern Global Toast Notification System */}
+      <ToastContainer />
 
     </div>
   );

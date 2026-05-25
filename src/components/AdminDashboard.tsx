@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth, onSnapshot, collection, doc, deleteDoc, updateDoc, setDoc, signInWithPopup, googleProvider, Timestamp } from '../firebase';
-import { Product, Ad, Category } from '../types';
+import { db, auth, onSnapshot, collection, doc, deleteDoc, updateDoc, setDoc, signInWithPopup, googleProvider, Timestamp, serverTimestamp } from '../firebase';
+import { Product, Ad, Category, Order, EGYPT_GOVERNORATES } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import VeboLogo from './VeboLogo';
 import { formatCurrency, formatDate } from '../lib/utils';
+import ToastContainer from './ToastContainer';
+import { showToast } from '../lib/toast';
 import { 
   Package, LayoutDashboard, Database, Link as LinkIcon, Plus, Trash2, Edit, Save, 
-  X, Check, LogOut, ShieldAlert, ArrowLeft, RefreshCw, Layers, ExternalLink, ShieldCheck, Tag
+  X, Check, LogOut, ShieldAlert, ArrowLeft, RefreshCw, Layers, ExternalLink, ShieldCheck, Tag, Settings, ShoppingBag
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -55,10 +57,13 @@ const INITIAL_MOCK_PRODUCTS: Partial<Product>[] = [
 
 export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
-  const [activeSubTab, setActiveSubTab] = useState<'products' | 'categories' | 'ads'>('products');
+  const [activeSubTab, setActiveSubTab] = useState<'products' | 'categories' | 'ads' | 'orders' | 'settings'>('products');
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [shippingFees, setShippingFees] = useState<Record<string, number>>({});
+  const [ordersView, setOrdersView] = useState<'active' | 'trash'>('active');
   const [isSeeding, setIsSeeding] = useState(false);
 
   // Passcode gating state for Admin (Vebo)
@@ -94,6 +99,13 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
     targetUrl: ''
   });
 
+  // Custom confirmation dialog state
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    id: string;
+    type: 'product' | 'category' | 'ad';
+    title: string;
+  } | null>(null);
+
   // Track auth state
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
@@ -102,7 +114,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
     return () => unsub();
   }, []);
 
-  // Sync products, categories, ads
+  // Sync products, categories, ads, orders, settings
   useEffect(() => {
     if (!isPasscodeUnlocked && (!currentUser || currentUser.email !== 'ma6922249@gmail.com')) return;
 
@@ -130,10 +142,35 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
       (error) => handleFirestoreError(error, OperationType.LIST, 'ads')
     );
 
+    const unsubOrders = onSnapshot(
+      collection(db, 'orders'),
+      (snapshot) => {
+        const orderList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+        orderList.sort((a, b) => {
+          const tA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const tB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return tB.getTime() - tA.getTime();
+        });
+        setOrders(orderList);
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'orders')
+    );
+
+    const unsubSettings = onSnapshot(
+      doc(db, 'settings', 'shipping_fees'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setShippingFees(snapshot.data() as Record<string, number>);
+        }
+      }
+    );
+
     return () => {
       unsubProds();
       unsubCats();
       unsubAds();
+      unsubOrders();
+      unsubSettings();
     };
   }, [currentUser, isPasscodeUnlocked]);
 
@@ -149,7 +186,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       console.error(err);
-      alert("فشل تسجيل الدخول أو تم حظره. يرجى السماح بالنوافذ المنبثقة.");
+      showToast("فشل تسجيل الدخول أو تم حظره. يرجى السماح بالنوافذ المنبثقة.", "error");
     }
   };
 
@@ -161,23 +198,73 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
   const handleSeedData = async () => {
     setIsSeeding(true);
     try {
-      // 1. Seed Categories
-      for (const catName of PRESET_CATEGORIES) {
-        const cleanId = `cat_${catName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
-        await setDoc(doc(db, 'categories', cleanId), {
-          name: catName,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+      // 1. Seed Categories with unique predefined English keys
+      const categorySeeds = [
+        { id: "cat_electronics", name: "إلكترونيات" },
+        { id: "cat_stationery", name: "أدوات مكتبية" },
+        { id: "cat_fashion", name: "ملابس وموضة" },
+        { id: "cat_home_lifestyle", name: "المنزل وأسلوب الحياة" },
+        { id: "cat_beauty", name: "مستحضرات عناية وتجميل" }
+      ];
+
+      for (const cat of categorySeeds) {
+        await setDoc(doc(db, 'categories', cat.id), {
+          name: cat.name,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
 
-      // 2. Seed prefilled products
-      for (const item of INITIAL_MOCK_PRODUCTS) {
-        const cleanId = `prod_${item.title!.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
-        await setDoc(doc(db, 'products', cleanId), {
-          ...item,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+      // 2. Seed prefilled products with unique predefined English keys
+      const productSeeds = [
+        {
+          id: "prod_headphones_pro",
+          title: "سماعات رأس عازلة للضوضاء Pro",
+          description: "استمتع بتجربة عزل ضوضاء نشط فائق الجودة مع بطارية تدوم حتى 40 ساعة، صوت محيطي لاسلكي عالي الدقة، ووسادات أذن ميموري فوم مريحة للغاية للارتداء الطويل.",
+          price: 299.99,
+          category: "إلكترونيات",
+          imageUrl: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80"
+        },
+        {
+          id: "prod_office_chair",
+          title: "كرسي مكتب شبكي طبي مريح",
+          description: "دعم متكامل ومخصص للعمود الفقري مع مساند ذراع ثلاثية الأبعاد قابلة للتعديل، شبكة خلفية جيدة التهوية، وضبط ارتفاع هيدروليكي انسيابي.",
+          price: 349.50,
+          category: "أدوات مكتبية",
+          imageUrl: "https://images.unsplash.com/photo-1505797149-43b0069ec26b?auto=format&fit=crop&w=600&q=80"
+        },
+        {
+          id: "prod_bamboo_mug",
+          title: "كوب حراري ذكي من الخيزران",
+          description: "كوب مصنوع يدوياً من الخيزران الطبيعي وجدار داخلي مزدوج من الفولاذ المقاوم للصدأ يحفظ برودة وسخونة المشروبات لمدة 24 ساعة.",
+          price: 28.00,
+          category: "المنزل وأسلوب الحياة",
+          imageUrl: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=600&q=80"
+        },
+        {
+          id: "prod_backpack_leather",
+          title: "حقيبة ظهر عصرية من جلد صديق للبيئة",
+          description: "مقاومة للماء بتصميم في غاية الأناقة والجميل، جيب مبطن للكمبيوتر المحمول حتى 16 بوصة، وجيوب سرية مريحة للتنقلات اليومية والرحلات سفر.",
+          price: 85.00,
+          category: "ملابس وموضة",
+          imageUrl: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80"
+        },
+        {
+          id: "prod_rgb_keyboard",
+          title: "لوحة مفاتيح ميكانيكية مضيئة RGB",
+          description: "مفاتيح بنية ميكانيكية توفر ملمساً ممتازاً، هيكل معدني متين، وإضاءة RGB خلفية ملونة بالكامل وقابلة للتخصيص حسب اختيارك.",
+          price: 139.99,
+          category: "إلكترونيات",
+          imageUrl: "https://images.unsplash.com/photo-1595225476474-87563907a212?auto=format&fit=crop&w=600&q=80"
+        }
+      ];
+
+      for (const item of productSeeds) {
+        const { id, ...itemData } = item;
+        await setDoc(doc(db, 'products', id), {
+          ...itemData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
 
@@ -224,15 +311,15 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           title: adItem.title,
           imageUrl: adItem.imageUrl,
           targetUrl: adItem.targetUrl,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
 
-      alert("تمت تهيئة وتوليد جميع البيانات التجريبية بنجاح عالي!");
+      showToast("تمت تهيئة وتوليد جميع البيانات التجريبية بنجاح عالي!", "success");
     } catch (err) {
       console.error(err);
-      alert("فشل التوليد. الرجاء التأكد من قواعد الأمان والاتصال.");
+      showToast("فشل التوليد. الرجاء التأكد من قواعد الأمان والاتصال.", "error");
     } finally {
       setIsSeeding(false);
     }
@@ -243,14 +330,14 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
     e.preventDefault();
     const actualCategory = productForm.category || (categories[0]?.name || PRESET_CATEGORIES[0]);
     if (!productForm.title || !productForm.description || !productForm.price || !productForm.imageUrl) {
-      alert("يرجى ملء جميع حقول المنتج الأساسية.");
+      showToast("يرجى ملء جميع حقول المنتج الأساسية.", "error");
       return;
     }
 
     try {
       const priceNum = parseFloat(productForm.price);
       if (isNaN(priceNum) || priceNum < 0) {
-        alert("سعر المنتج غير صالح.");
+        showToast("سعر المنتج غير صالح.", "error");
         return;
       }
 
@@ -262,7 +349,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           price: priceNum,
           category: actualCategory,
           imageUrl: productForm.imageUrl,
-          updatedAt: Timestamp.now()
+          updatedAt: serverTimestamp()
         });
         setEditingProduct(null);
       } else {
@@ -273,8 +360,8 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           price: priceNum,
           category: actualCategory,
           imageUrl: productForm.imageUrl,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
 
@@ -286,7 +373,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
         category: categories[0]?.name || PRESET_CATEGORIES[0],
         imageUrl: ''
       });
-      alert("تم حفظ المنتج بنجاح.");
+      showToast("تم حفظ المنتج بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, editingProduct ? OperationType.UPDATE : OperationType.CREATE, 'products');
     }
@@ -305,11 +392,19 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
   };
 
   // Delete product
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا المنتج نهائياً من الكتالوج؟")) return;
+  const handleDeleteProduct = async (id: string, bypassConfirm = false) => {
+    if (!bypassConfirm) {
+      const prod = products.find(p => p.id === id);
+      setDeleteConfirm({
+        id,
+        type: 'product',
+        title: prod ? prod.title : 'هذا المنتج'
+      });
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'products', id));
-      alert("تم حذف المنتج.");
+      showToast("تم حذف المنتج بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `products/${id}`);
     }
@@ -319,7 +414,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryForm.name.trim()) {
-      alert("اسم القسم مطلوب.");
+      showToast("اسم القسم مطلوب.", "error");
       return;
     }
     try {
@@ -327,30 +422,38 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
         const docRef = doc(db, 'categories', editingCategory.id);
         await updateDoc(docRef, {
           name: categoryForm.name.trim(),
-          updatedAt: Timestamp.now()
+          updatedAt: serverTimestamp()
         });
         setEditingCategory(null);
       } else {
         const cleanId = `cat_${Date.now()}`;
         await setDoc(doc(db, 'categories', cleanId), {
           name: categoryForm.name.trim(),
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
       setCategoryForm({ name: '' });
-      alert("تم حفظ القسم بنجاح.");
+      showToast("تم حفظ القسم بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, editingCategory ? OperationType.UPDATE : OperationType.CREATE, 'categories');
     }
   };
 
   // Delete category
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا القسم؟ قد يؤثر ذلك على تصفية المنتجات.")) return;
+  const handleDeleteCategory = async (id: string, bypassConfirm = false) => {
+    if (!bypassConfirm) {
+      const cat = categories.find(c => c.id === id);
+      setDeleteConfirm({
+        id,
+        type: 'category',
+        title: cat ? cat.name : 'هذا القسم'
+      });
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'categories', id));
-      alert("تم حذف القسم.");
+      showToast("تم حذف القسم بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `categories/${id}`);
     }
@@ -365,7 +468,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
   const handleTargetedAdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetedAdForm.title || !targetedAdForm.imageUrl || !targetedAdForm.targetUrl) {
-      alert("حقول عنوان الإعلان والصورة والوجهة هي حقول إلزامية.");
+      showToast("حقول عنوان الإعلان والصورة والوجهة هي حقول إلزامية.", "error");
       return;
     }
 
@@ -378,7 +481,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           title: targetedAdForm.title,
           imageUrl: targetedAdForm.imageUrl,
           targetUrl: targetedAdForm.targetUrl,
-          updatedAt: Timestamp.now()
+          updatedAt: serverTimestamp()
         });
         setEditingAd(null);
       } else {
@@ -389,8 +492,8 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           title: targetedAdForm.title,
           imageUrl: targetedAdForm.imageUrl,
           targetUrl: targetedAdForm.targetUrl,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
       }
 
@@ -401,7 +504,7 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
         imageUrl: '',
         targetUrl: ''
       });
-      alert("تم حفظ حملة الإعلان المستهدفة بنجاح.");
+      showToast("تم حفظ حملة الإعلان المستهدفة بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, editingAd ? OperationType.UPDATE : OperationType.CREATE, 'ads');
     }
@@ -419,13 +522,86 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
     });
   };
 
-  const handleDeleteAd = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا الإعلان نهائياً؟")) return;
+  const handleDeleteAd = async (id: string, bypassConfirm = false) => {
+    if (!bypassConfirm) {
+      const adItem = ads.find(a => a.id === id);
+      setDeleteConfirm({
+        id,
+        type: 'ad',
+        title: adItem ? adItem.title : 'هذا الإعلان'
+      });
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'ads', id));
-      alert("تم حذف الإعلان.");
+      showToast("تم حذف الإعلان بنجاح.", "success");
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `ads/${id}`);
+    }
+  };
+
+  // Submit custom shipping fees
+  const handleSaveShippingFees = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await setDoc(doc(db, 'settings', 'shipping_fees'), shippingFees);
+      showToast("تم تحديث أسعار شحن المحافظات بنجاح.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("فشل في حفظ أسعار شحن المحافظات.", "error");
+    }
+  };
+
+  // Soft Delete Order (move to trash)
+  const handleSoftDeleteOrder = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        isDeleted: true,
+        updatedAt: serverTimestamp()
+      });
+      showToast("تم نقل الطلب إلى سلة المحذوفات مؤقتاً.", "info");
+    } catch (err) {
+      console.error(err);
+      showToast("فشل نقل طلب العميل للمحذوفات.", "error");
+    }
+  };
+
+  // Restore Order from trash
+  const handleRestoreOrder = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        isDeleted: false,
+        updatedAt: serverTimestamp()
+      });
+      showToast("تم استعادة الطلب بنجاح إلى القائمة النشطة.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("فشل استعادة طلب العميل.", "error");
+    }
+  };
+
+  // Permanent Delete Order
+  const handlePermanentDeleteOrder = async (orderId: string) => {
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+      showToast("تم حذف الطلب نهائياً بنجاح.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("فشل الحذف النهائي لطلب العميل.", "error");
+    }
+  };
+
+  // Update order status
+  const handleUpdateOrderStatus = async (orderId: string, status: 'pending' | 'completed' | 'canceled') => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status,
+        updatedAt: serverTimestamp()
+      });
+      showToast("تم تحديث حالة الطلب بنجاح.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("فشل تحديث حالة الطلب.", "error");
     }
   };
 
@@ -535,6 +711,24 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {!isAdminSession ? (
+            <button
+              onClick={handleGoogleLogin}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs animate-pulse hover:animate-none"
+              title="يجب ربط بريدك الإلكتروني ma6922249@gmail.com لتتمكن من إضافة وتعديل البيانات بنجاح"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114A5.94 5.94 0 018 12.57c0-3.3 2.67-5.97 5.99-5.97 1.503 0 2.873.553 3.937 1.455l3.125-3.125C19.166 3.195 16.595 2 13.99 2 8.163 2 3.43 6.733 3.43 12.57S8.163 23.14 13.99 23.14c5.84 0 10.51-4.218 10.51-10.57 0-.71-.054-1.42-.164-2.115H12.24z"/>
+              </svg>
+              <span>ربط حساب Google كمسؤول</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-2 rounded-xl text-[11px] font-black border border-emerald-150">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>جوجل متصل كمسؤول</span>
+            </div>
+          )}
+
           <button
             onClick={handlePasscodeLogout}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-text-main text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer"
@@ -564,11 +758,11 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
         <div className="space-y-6 animate-fade-in text-right">
             
             {/* Navigation Tabs Selector */}
-            <div className="flex border-b border-slate-200 bg-white p-1 rounded-2xl max-w-md">
+            <div className="flex border border-slate-150 bg-white p-1 rounded-2xl max-w-4xl overflow-x-auto gap-1 shadow-xs">
               <button
                 onClick={() => setActiveSubTab('products')}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeSubTab === 'products' ? "bg-accent text-white shadow" : "text-text-muted hover:text-text-main"
+                className={`px-4.5 py-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  activeSubTab === 'products' ? "bg-accent text-white shadow-md" : "text-text-muted hover:text-text-main hover:bg-slate-50"
                 }`}
               >
                 <Package className="w-4 h-4" />
@@ -576,21 +770,39 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
               </button>
               <button
                 onClick={() => setActiveSubTab('categories')}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeSubTab === 'categories' ? "bg-accent text-white shadow" : "text-text-muted hover:text-text-main"
+                className={`px-4.5 py-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  activeSubTab === 'categories' ? "bg-accent text-white shadow-md" : "text-text-muted hover:text-text-main hover:bg-slate-50"
                 }`}
               >
                 <Tag className="w-4 h-4" />
-                الأقسام والتصنيفات ({categories.length})
+                أقسام وتصنيفات المتجر ({categories.length})
               </button>
               <button
                 onClick={() => setActiveSubTab('ads')}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeSubTab === 'ads' ? "bg-accent text-white shadow" : "text-text-muted hover:text-text-main"
+                className={`px-4.5 py-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  activeSubTab === 'ads' ? "bg-accent text-white shadow-md" : "text-text-muted hover:text-text-main hover:bg-slate-50"
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
                 الإعلانات المستهدفة ({ads.length})
+              </button>
+              <button
+                onClick={() => setActiveSubTab('orders')}
+                className={`px-4.5 py-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  activeSubTab === 'orders' ? "bg-accent text-white shadow-md" : "text-text-muted hover:text-text-main hover:bg-slate-50"
+                }`}
+              >
+                <ShoppingBag className="w-4 h-4" />
+                طلبات العملاء الحالية ({orders.length})
+              </button>
+              <button
+                onClick={() => setActiveSubTab('settings')}
+                className={`px-4.5 py-3 rounded-xl text-xs font-black tracking-tight flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  activeSubTab === 'settings' ? "bg-accent text-white shadow-md" : "text-text-muted hover:text-text-main hover:bg-slate-50"
+                }`}
+              >
+                <Settings className="w-4 h-4" />
+                أسعار شحن المحافظات
               </button>
             </div>
 
@@ -1078,6 +1290,246 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
               </div>
             )}
 
+            {/* TAB CONTAINER 4: ORDERS MANAGEMENT */}
+            {activeSubTab === 'orders' && (
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6 text-right">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h3 className="text-text-main text-base font-black tracking-tight">إدارة طلبات المبيعات الحالية</h3>
+                    <p className="text-[11px] text-text-muted">متابعة طلبات الشراء الواردة من السلة المشتركة وتغيير حالتها أو تصفيتها</p>
+                  </div>
+                  
+                  {/* Active vs Deleted Bin toggle */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl self-start gap-1 border border-slate-200">
+                    <button
+                      onClick={() => setOrdersView('active')}
+                      className={`px-4.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                        ordersView === 'active'
+                          ? "bg-white text-text-main shadow-xs"
+                          : "text-text-muted hover:text-text-main"
+                      }`}
+                    >
+                      الطلبات النشطة ({orders.filter(o => o.isDeleted !== true).length})
+                    </button>
+                    <button
+                      onClick={() => setOrdersView('trash')}
+                      className={`px-4.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                        ordersView === 'trash'
+                          ? "bg-rose-50 text-rose-700 shadow-xs border border-rose-100"
+                          : "text-text-muted hover:text-text-main"
+                      }`}
+                    >
+                      سلة المحذوفات ({orders.filter(o => o.isDeleted === true).length})
+                    </button>
+                  </div>
+                </div>
+
+                {orders.filter(o => ordersView === 'trash' ? o.isDeleted === true : o.isDeleted !== true).length === 0 ? (
+                  <div className="py-20 text-center space-y-3">
+                    <div className="w-16 h-16 bg-slate-50 text-slate-350 rounded-full flex items-center justify-center mx-auto">
+                      <ShoppingBag className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-text-main font-bold text-sm">
+                        {ordersView === 'trash' ? 'سلة المحذوفات فارغة' : 'لا توجد طلبات جارية'}
+                      </h4>
+                      <p className="text-xs text-text-muted">
+                        {ordersView === 'trash' ? 'الطلبات التي تحذفها ستظهر هنا أولاً لتتمكن من استعادتها أو مسحها نهائياً.' : 'سيظهر هنا أي طلب شراء يرسله العملاء من خلال السلة.'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-in">
+                    {orders
+                      .filter(o => ordersView === 'trash' ? o.isDeleted === true : o.isDeleted !== true)
+                      .map((order) => {
+                        const totalItemsCount = order.items?.reduce((s, i) => s + (i.quantity || 1), 0) || 0;
+                        return (
+                          <div
+                            key={order.id}
+                            className="border border-slate-250 bg-slate-50/20 rounded-2xl p-5 hover:bg-white hover:shadow-md transition-all space-y-4 text-right"
+                          >
+                            {/* Top row */}
+                            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3.5">
+                              <div className="space-y-1 text-right">
+                                <span className="text-[10px] text-text-muted font-mono leading-none block">رقم وتوقيت الطلب</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs font-black text-text-main bg-slate-100 px-2 py-0.5 rounded-md">{order.id}</span>
+                                  <span className="text-[11px] text-text-muted">{formatDate(order.createdAt)}</span>
+                                </div>
+                              </div>
+
+                              {/* Status Display or actions depending on tab */}
+                              {ordersView === 'active' ? (
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black ${
+                                    order.status === 'completed'
+                                      ? 'bg-emerald-50 text-emerald-650 border border-emerald-150'
+                                      : order.status === 'canceled'
+                                        ? 'bg-rose-50 text-rose-650 border border-rose-150'
+                                        : 'bg-amber-50 text-amber-650 border border-amber-150'
+                                  }`}>
+                                    {order.status === 'completed' ? '✓ مكتمل' : order.status === 'canceled' ? '✕ ملغي' : '● قيد المراجعة'}
+                                  </span>
+
+                                  <div className="flex border border-slate-200 rounded-lg overflow-hidden h-8 bg-white">
+                                    <button
+                                      onClick={() => handleUpdateOrderStatus(order.id, 'completed')}
+                                      className="px-2.5 text-[10px] font-black text-emerald-600 hover:bg-emerald-50 border-l border-slate-200 cursor-pointer"
+                                      title="تأشير كمكتمل"
+                                    >
+                                      مكتمل
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateOrderStatus(order.id, 'canceled')}
+                                      className="px-2.5 text-[10px] font-black text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                      title="تأشير كملغي"
+                                    >
+                                      ملغي
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="bg-rose-50 border border-rose-150 text-rose-700 text-[10px] font-black px-2.5 py-1 rounded-xl">
+                                  ⚠️ طلب محذوف مؤقتاً
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Client info with governorates */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl text-xs font-semibold text-right border border-slate-150">
+                              <div className="space-y-1">
+                                <span className="text-[9px] text-text-muted leading-none block">العميل المستلم</span>
+                                <span className="text-text-main font-bold">{order.customerName}</span>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[9px] text-text-muted leading-none block">الجوال والاتصال</span>
+                                <span className="text-text-main font-bold font-mono">{order.customerPhone}</span>
+                              </div>
+                              <div className="space-y-1 border-t border-slate-150 pt-2 col-span-1">
+                                <span className="text-[9px] text-text-muted leading-none block">المحافظة والشحن</span>
+                                <span className="text-text-main font-bold">
+                                  {order.governorate || 'القاهرة'} (شحن: {formatCurrency(order.shippingFee ?? 40)})
+                                </span>
+                              </div>
+                              <div className="space-y-1 border-t border-slate-150 pt-2 col-span-1">
+                                <span className="text-[9px] text-text-muted leading-none block">العنوان السكني</span>
+                                <span className="text-text-main font-bold block truncate" title={order.customerAddress}>
+                                  {order.customerAddress || 'غير معرّف'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Items included in list */}
+                            <div className="space-y-2">
+                              <span className="text-[10px] text-text-muted font-black uppercase block text-right">المنتجات المختارة ({totalItemsCount} قطع):</span>
+                              <div className="divide-y divide-slate-150 max-h-40 overflow-y-auto bg-white border border-slate-150 rounded-xl px-3 py-1.5">
+                                {order.items?.map((item, idx) => (
+                                  <div key={idx} className="py-2 flex items-center justify-between text-xs font-semibold">
+                                    <span className="text-text-main font-black">{item.productTitle}</span>
+                                    <span className="text-text-muted font-mono">
+                                      {item.quantity} × {formatCurrency(item.price)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Order actions footer */}
+                            <div className="flex items-center justify-between pt-3.5 border-t border-slate-150">
+                              <div className="text-xs font-black">
+                                الإجمالي الكلي: <span className="text-accent text-sm font-black mr-1">{formatCurrency(order.totalPrice || 0)}</span>
+                              </div>
+
+                              {ordersView === 'active' ? (
+                                <button
+                                  onClick={() => handleSoftDeleteOrder(order.id)}
+                                  className="px-3 py-1.5 hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl transition-all cursor-pointer text-xs font-extrabold flex items-center gap-1.5"
+                                  title="نقل الطلب للمحذوفات"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  حذف الطلب
+                                </button>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleRestoreOrder(order.id)}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl transition-all cursor-pointer text-xs font-extrabold flex items-center gap-1"
+                                    title="استعادة الطلب مجدداً"
+                                  >
+                                    استعادة
+                                  </button>
+                                  <button
+                                    onClick={() => handlePermanentDeleteOrder(order.id)}
+                                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl transition-all cursor-pointer text-xs font-extrabold flex items-center gap-1"
+                                    title="حذف نهائي للطلب"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    حذف نهائي
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTAINER 5: SHIPPING SETTINGS */}
+            {activeSubTab === 'settings' && (
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6 text-right w-full mx-auto font-sans">
+                <div className="border-b border-slate-150 pb-4">
+                  <h3 className="text-text-main text-base font-black tracking-tight">إعدادات وتعديل أسعار شحن المحافظات</h3>
+                  <p className="text-[11px] text-text-muted">قم بتغيير تكلفة شحن وتوصيل الطلبات لكل محافظة من محافظات جمهورية مصر العربية وسيتم تحديثها فوراً للعملاء داخل السلة.</p>
+                </div>
+
+                <form onSubmit={handleSaveShippingFees} className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-[480px] overflow-y-auto p-2 border border-slate-100 rounded-2xl bg-slate-50/50">
+                    {EGYPT_GOVERNORATES.map((gov) => {
+                      return (
+                        <div key={gov.name} className="bg-white border border-slate-200 p-3.5 rounded-xl flex items-center justify-between gap-3 shadow-2xs hover:border-slate-350 transition-all">
+                          <span className="text-xs font-black text-text-main shrink-0">{gov.name}</span>
+                          <div className="flex items-center gap-1.5 w-24">
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder={gov.shippingFee.toString()}
+                              value={shippingFees[gov.name] !== undefined ? shippingFees[gov.name] : ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setShippingFees(prev => ({
+                                  ...prev,
+                                  [gov.name]: val === '' ? gov.shippingFee : Number(val)
+                                }));
+                              }}
+                              className="w-full text-xs font-bold p-1.5 border border-slate-200 rounded-lg outline-none focus:border-accent bg-slate-50/50 text-center font-mono"
+                            />
+                            <span className="text-[10px] font-bold text-text-muted shrink-0">ج.م</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-amber-50 border border-amber-150 p-4 rounded-2xl">
+                    <span className="text-[10px] font-bold text-amber-900 text-right leading-relaxed mb-2 sm:mb-0">
+                      💡 ملاحظة: الأسعار الفارغة ستعتمد تلقائياً قيم التوصيل الافتراضية المحددة مسبقاً لكل محافظة. لتخصيص السعر، اكتب القيمة الجديدة مباشرة.
+                    </span>
+                    <button
+                      type="submit"
+                      className="py-3 px-5 bg-accent hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0 self-end sm:self-auto"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>حفظ أسعار التوصيل</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             {/* Zero-Trust visual indicator */}
             <div className="bg-slate-100/50 border border-slate-200 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 text-right">
               <div className="space-y-1 max-w-xl">
@@ -1099,6 +1551,54 @@ export default function AdminDashboard({ onBackToHome }: AdminDashboardProps) {
           </div>
 
       </main>
+
+      {/* Modern Custom Delete Confirmation Overlay */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white border border-slate-200 rounded-[2rem] max-w-sm w-full p-6 shadow-2xl space-y-5 text-right">
+            <div className="flex flex-col items-center text-center gap-2">
+              <div className="p-3 bg-red-50 text-red-500 rounded-2xl">
+                <ShieldAlert className="w-8 h-8 text-rose-500" />
+              </div>
+              <h3 className="text-base font-black text-text-main mt-2">تأكيد عملية الحذف</h3>
+              <p className="text-xs text-text-muted leading-relaxed">
+                هل أنت متأكد من حذف <strong className="text-text-main font-bold">"{deleteConfirm.title}"</strong> نهائياً؟ لا يمكن التراجع عن هذا الإجراء بعد تنفيذه من قاعدة البيانات.
+              </p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-3 text-xs font-bold text-text-muted hover:text-text-main bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer text-center transition-colors"
+              >
+                إلغاء التراجع
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { id, type } = deleteConfirm;
+                  setDeleteConfirm(null);
+                  if (type === 'product') {
+                    await handleDeleteProduct(id, true);
+                  } else if (type === 'category') {
+                    await handleDeleteCategory(id, true);
+                  } else if (type === 'ad') {
+                    await handleDeleteAd(id, true);
+                  }
+                }}
+                className="flex-1 py-3 text-xs font-black text-white bg-rose-500 hover:bg-rose-600 rounded-xl cursor-pointer text-center transition-colors shadow-xs"
+              >
+                تأكيد الحذف النهائي
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global localized toasts for the admin view */}
+      <ToastContainer />
+
     </div>
   );
 }
