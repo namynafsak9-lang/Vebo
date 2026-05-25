@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "A dynamic product category.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product listed on the e-commerce store.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "price", "category", "imageUrl"]
+    },
+    "Ad": {
+      "title": "Ad",
+      "description": "An advertising banner displayed on the platform.",
+      "type": "object",
+      "properties": {
+        "slot": { "type": "string", "enum": ["header", "sidebar", "feed"] },
+        "imageUrl": { "type": "string" },
+        "targetUrl": { "type": "string" },
+        "title": { "type": "string" },
+        "categoryTarget": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slot", "imageUrl", "targetUrl", "title"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": { "schema": "Category", "description": "Dynamic product categories" },
+    "/products/{productId}": { "schema": "Product", "description": "Products list" },
+    "/ads/{adId}": { "schema": "Ad", "description": "Advertisement slots config" }
+  }
+}

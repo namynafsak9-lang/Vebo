@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Catch-All Global Safety Net (Zero-Trust Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Global Auth Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        request.auth.token.email == "ma6922249@gmail.com" && 
+        request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Product Document Invariants & Hardened Validation
+    function isValidProduct(data) {
+      return data.keys().hasAll(['title', 'description', 'price', 'category', 'imageUrl']) &&
+        (data.keys().size() == 5 || data.keys().size() == 7) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 128 &&
+        data.description is string && data.description.size() > 0 && data.description.size() <= 5000 &&
+        data.price is number && data.price >= 0 &&
+        data.category is string && data.category.size() > 0 && data.category.size() <= 64 &&
+        data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() <= 2048;
+    }
+
+    // Ad Placement Invariants & Hardened Validation
+    function isValidAd(data) {
+      return data.keys().hasAll(['slot', 'imageUrl', 'targetUrl', 'title']) &&
+        (data.keys().size() >= 4 && data.keys().size() <= 8) &&
+        data.slot is string && (data.slot == "header" || data.slot == "sidebar" || data.slot == "feed") &&
+        data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() <= 2048 &&
+        data.targetUrl is string && data.targetUrl.size() > 0 && data.targetUrl.size() <= 2048 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 128 &&
+        (!data.keys().contains('categoryTarget') || (data.categoryTarget is string && data.categoryTarget.size() <= 128));
+    }
+
+    // Dynamic Category validation
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name']) &&
+        (data.keys().size() >= 1 && data.keys().size() <= 4) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 128;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(categoryId) && isValidCategory(incoming()) && (!incoming().keys().contains('createdAt') || incoming().createdAt == request.time);
+      allow update: if isAdmin() && isValidId(categoryId) && isValidCategory(incoming()) && (!incoming().keys().contains('updatedAt') || incoming().updatedAt == request.time) && (!incoming().keys().contains('createdAt') || !existing().keys().contains('createdAt') || incoming().createdAt == existing().createdAt);
+      allow delete: if isAdmin() && isValidId(categoryId);
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && (!incoming().keys().contains('createdAt') || incoming().createdAt == request.time);
+      allow update: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && (!incoming().keys().contains('updatedAt') || incoming().updatedAt == request.time) && (!incoming().keys().contains('createdAt') || !existing().keys().contains('createdAt') || incoming().createdAt == existing().createdAt);
+      allow delete: if isAdmin() && isValidId(productId);
+    }
+
+    match /ads/{adId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(adId) && isValidAd(incoming()) && (!incoming().keys().contains('createdAt') || incoming().createdAt == request.time);
+      allow update: if isAdmin() && isValidId(adId) && isValidAd(incoming()) && (!incoming().keys().contains('updatedAt') || incoming().updatedAt == request.time) && (!incoming().keys().contains('createdAt') || !existing().keys().contains('createdAt') || incoming().createdAt == existing().createdAt);
+      allow delete: if isAdmin() && isValidId(adId);
+    }
+
+    match /test_connection/{id} {
+      allow read: if true;
+    }
+
+    match /test/{id} {
+      allow read: if true;
+    }
+  }
+}

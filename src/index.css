@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #f0f2f5;
+  --color-sidebar: #1e293b;
+  --color-card: #ffffff;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+  --color-accent: #2563eb;
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-border: #e2e8f0;
+  --color-panel-header: #f8fafc;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-text-main bg-background;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .panel {
+    @apply bg-card rounded-xl border border-border overflow-hidden flex flex-col;
+  }
+  
+  .panel-header {
+    @apply px-4 py-3 bg-panel-header border-b border-border flex justify-between items-center font-semibold text-sm;
+  }
+  
+  .status-pill {
+    @apply px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider;
+  }
+}
+
+/* RTL Specifics */
+[dir="rtl"] .pr-10 {
+  padding-right: 2.5rem;
+  padding-left: 1rem;
+}
+[dir="rtl"] .pl-10 {
+  padding-left: 2.5rem;
+  padding-right: 1rem;
+}
+[dir="rtl"] .right-3 {
+  right: 0.75rem;
+  left: auto;
+}
+[dir="rtl"] .left-3 {
+  left: 0.75rem;
+  right: auto;
+}
+
